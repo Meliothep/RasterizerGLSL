@@ -22,4 +22,6 @@ C’est une mini pipeline graphique GPU reproduit manuellement dans un fragment 
 
 - [x] Z-Buffer : Gère correctement le recouvrement entre objets.
 
-- [ ] Support d'eclairage multiple
+- [x] Support d'eclairage multiple
+
+- [ ] Shading ? 

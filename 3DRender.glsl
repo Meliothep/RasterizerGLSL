@@ -70,12 +70,6 @@ struct Pixel{
 
 Pixel pixel;
 
-struct Transform{
-    vec3 pos;
-    mat3 rotation;
-    mat3 scale;
-};
-
 struct Light{
     vec3 position;
     vec3 color; 
@@ -111,6 +105,12 @@ struct Mesh {
     int trianglesLength;
 };
 
+struct Transform{
+    vec3 pos;
+    mat3 rotation;
+    mat3 scale;
+};
+
 struct Entity{
     Mesh mesh; 
     Material m;
@@ -125,16 +125,6 @@ struct Camera{
     mat4 viewMatrix;
     mat4 projectionMatrix;
 };
-
-struct World{
-    Camera camera;
-    Entity entities[MAX_ENTITY_NUMBER];
-    Light Lights[MAX_LIGHT_NUMBER]; 
-
-    vec4 skyboxColor;
-};
-
-World world;
 
 /* ====================== TRANSFORM ====================== */
 
@@ -177,6 +167,30 @@ mat4 modelMatrix(Transform t){
     );
 }
 
+/* ====================== WORLD ====================== */
+
+struct World{
+    Camera camera;
+    
+    Entity entities[MAX_ENTITY_NUMBER];
+    int entitiesLen;
+    Light lights[MAX_LIGHT_NUMBER]; 
+    int lightsLen;
+    
+    vec4 skyboxColor;
+};
+
+World world;
+
+void AddEntity(inout World w, Entity e){
+    w.entities[w.entitiesLen] = e;
+    w.entitiesLen ++;
+}
+
+void AddLight(inout World w, Light l){
+    w.lights[w.lightsLen] = l;
+    w.lightsLen ++;
+}
 
 /* ====================== PIPELINES ====================== */
 
@@ -189,7 +203,7 @@ bool isTriangleVisible(Triangle t, Camera cam) {
     return dot(normalize(t.normalV), camToTri) < 0.0;
 }
 
-Triangle GeometryPipeline(inout Triangle t, vec2 st, mat4 M , mat4 V, mat4 P){
+void GeometryPipeline(inout Triangle t, vec2 st, mat4 M , mat4 V, mat4 P){
     
     // Object => World 
     t.aW = M * vec4(t.a, 1.0);
@@ -213,33 +227,40 @@ Triangle GeometryPipeline(inout Triangle t, vec2 st, mat4 M , mat4 V, mat4 P){
     t.ndc = barycentricCoords(st, aN, bN, cN);
 
     t.visibility = isTriangleVisible(t, world.camera) ? step(0.0, min(t.ndc.x, min(t.ndc.y, t.ndc.z))) : 0.0;
-    return t;
 }
 
-vec4 ColorPipeline(inout Triangle t, Material mat, Light light, mat4 V){
+vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V){
     vec3 fragmentPosition = t.ndc.x * t.bV + t.ndc.y * t.cV + t.ndc.z * t.aV;
     
-    vec3 lightPosView = (V * vec4(light.position, 1.0)).xyz;
+    vec4 fragColor = vec4(0.);
 
-    vec3 lightDir = normalize(lightPosView - fragmentPosition);
+    for(int i = 0; i < MAX_LIGHT_NUMBER; i++){
+        if(i >= world.lightsLen) { break; }
 
-    // light  Culling 
-    float diffuseIntensity = max(dot(normalize(t.normalV), lightDir), 0.0);
+        vec3 lightPosView = (V * vec4(world.lights[i].position, 1.0)).xyz;
 
-    // Attenuation 
-    float distance = length(lightPosView - fragmentPosition);
-    float attenuation = 1.0 / (distance * distance);
+        vec3 lightDir = normalize(lightPosView - fragmentPosition);
 
-    // Combine lighting
-    vec3 baseLighting = diffuseIntensity * light.intensity * attenuation * light.color;
-    vec3 finalColor = baseLighting * mat.color.rgb + (attenuation * mat.reflection * light.color);
+        // light  Culling 
+        float diffuseIntensity = max(dot(normalize(t.normalV), lightDir), 0.0);
 
-    return vec4(finalColor, 1.0 - mat.transparency);
-    }
+        // Attenuation 
+        float distance = length(lightPosView - fragmentPosition);
+        float attenuation = 1.0 / (distance * distance);
+
+        // Combine lighting
+        vec3 baseLighting = diffuseIntensity * world.lights[i].intensity * attenuation * world.lights[i].color;
+        vec3 finalColor = baseLighting * mat.color.rgb + (attenuation * mat.reflection * world.lights[i].color);
+
+        fragColor += vec4(finalColor, 1.0 - mat.transparency);
+    } 
+    
+    return fragColor;
+}
 
 /* ====================== RENDER ====================== */
 
-vec4 renderTriangle(vec2 st, inout Triangle tr, Material mat, mat4 modelMatrix, Light light){
+vec4 renderTriangle(vec2 st, inout Triangle tr, Material mat, mat4 modelMatrix){
     
     GeometryPipeline(tr, st,
         modelMatrix,
@@ -247,17 +268,17 @@ vec4 renderTriangle(vec2 st, inout Triangle tr, Material mat, mat4 modelMatrix, 
         world.camera.projectionMatrix);
     
     if (tr.visibility > 0.){
-        return ColorPipeline(tr, mat, light, world.camera.viewMatrix);
+        return ColorPipeline(tr, mat, world.camera.viewMatrix);
     }
     return vec4(0.); 
 }
 
-void renderEntity(vec2 st, Entity e , Light light) {
+void renderEntity(vec2 st, Entity e) {
     if(e.mesh.trianglesLength <= 0) {
         pixel.color = vec4(0.);
         return ;
     }
-    
+
     vec4 color = vec4(0.);
     mat4 modelMatrix = modelMatrix(e.transform);
 
@@ -269,7 +290,7 @@ void renderEntity(vec2 st, Entity e , Light light) {
         t.b = e.mesh.vertices[e.mesh.triangles[i+1]];
         t.c = e.mesh.vertices[e.mesh.triangles[i+2]];
 
-        color = renderTriangle(st, t, e.m, modelMatrix, light);
+        color = renderTriangle(st, t, e.m, modelMatrix);
         
         // THE FUCKING Z BUFFER !!!!
         if(color.a > 0.){
@@ -280,6 +301,14 @@ void renderEntity(vec2 st, Entity e , Light light) {
                 pixel.color = color; 
             }
         }
+    }
+}
+
+void renderWorld(vec2 st, World w){
+    for(int i = 0; i < MAX_ENTITY_NUMBER; i++){
+        if(i >= w.entitiesLen) { break; }
+
+        renderEntity(st, w.entities[i]);
     }
 }
 
@@ -325,7 +354,6 @@ void defineCube(inout Mesh m) {
     m.trianglesLength = 36;
 }
 
-
 void defineGr(inout Mesh m) {
     // Vertices
     m.vertices[0] = vec3(-1, 0, 1); // FL
@@ -367,9 +395,18 @@ void main() {
 
     // Define light source
     Light light;
-    light.position = vec3(-2, 0, -0);
+    light.position = vec3(-2, 0., -0.);
     light.color = vec3(1.0, 1.0, 1.0);
-    light.intensity = 3.;
+    light.intensity = 7.;
+
+    AddLight(world, light);
+
+    Light lightB;
+    lightB.position = vec3(2, 0., -0.);
+    lightB.color = vec3(1.0, 1.0, 1.0);
+    lightB.intensity = 7.;
+
+    AddLight(world, lightB);
 
     // Define Cube
     Entity cube; 
@@ -384,6 +421,8 @@ void main() {
     rotateZ(cube.transform, 0.5);
     cube.transform.pos = vec3(.0);
     //scaleUniform(cube.transform, 0.8);
+    
+    AddEntity(world, cube);
 
     // Define Ground
     Entity gr; 
@@ -392,11 +431,13 @@ void main() {
     gr.m.reflection = 0.8;
     gr.transform = default_transform;
     gr.transform.pos = vec3(0., 0., 0.);
+    rotateY(gr.transform, 0.5 * - u_time);
     //scale(gr.transform, vec3(2, 1., 2));
+    AddEntity(world, gr);
 
-    // Render Entity
-    renderEntity(st, cube, light); 
-    renderEntity(st, gr, light); 
+
+    // Render
+    renderWorld(st, world);
     
     vec4 color = pixel.color;
     // Result
