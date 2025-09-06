@@ -3,8 +3,8 @@
 precision mediump float;
 
 #define PI 3.14159265359
-#define MAX_VERTICES_NUMBER 99
-#define MAX_TRIANGLES_NUMBER 594 
+#define MAX_VERTICES_NUMBER 40
+#define MAX_TRIANGLES_NUMBER 80 
 #define MAX_ENTITY_NUMBER 5 
 #define MAX_LIGHT_NUMBER 5 
 
