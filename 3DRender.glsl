@@ -3,10 +3,10 @@
 precision lowp float;
 
 #define PI 3.14159265359
-#define MAX_VERTICES_NUMBER 40
-#define MAX_TRIANGLES_NUMBER 80 
+#define MAX_VERTICES_NUMBER 45
+#define MAX_TRIANGLES_NUMBER 120 
 #define MAX_ENTITY_NUMBER 2 
-#define MAX_LIGHT_NUMBER 5 
+#define MAX_LIGHT_NUMBER 3 
 
 uniform vec2 u_resolution;
 uniform vec2 u_mouse;
@@ -328,6 +328,7 @@ void defineCube(inout Mesh m) {
  
     m.vertices[4] = vec3(1, 1, -1); // topFL
     m.vertices[5] = vec3(0.3, 1, -1);
+
     m.vertices[6] = vec3(1, -1, -1); // botFL
     m.vertices[7] = vec3(0.3, -0.3, -1);
  
@@ -351,10 +352,42 @@ void defineCube(inout Mesh m) {
     m.vertices[20] = vec3(-0.1, 1, -1);
  
     m.vertices[21] = vec3(-0.1, 1, -0.1);
+
+    m.vertices[22] = m.vertices[0] - vec3(0., 0.05, 0.); // topBR
+    m.vertices[23] = m.vertices[1] - vec3(0., 0.05, 0.);
+    m.vertices[24] = m.vertices[2] - vec3(0., 0.05, 0.); // topBL
+    m.vertices[25] = m.vertices[3] - vec3(0., 0.05, 0.);
+ 
+    m.vertices[26] = m.vertices[4] - vec3(0., 0.05, -0.05); // topBR
+    m.vertices[27] = m.vertices[5] - vec3(0., 0.05, -0.05);
+
+    m.vertices[28] = m.vertices[6] - vec3(0., 0, -0.05); // topBL
+    m.vertices[29] = m.vertices[7] - vec3(0., 0, -0.05);
+ 
+    m.vertices[30] = m.vertices[8] - vec3(-0.05,0. , -0.05);
+    m.vertices[31] = m.vertices[9] - vec3(-0.05, 0, -0.05);
+ 
+    m.vertices[32] = m.vertices[10] - vec3(-0.05, 0, 0);
+    m.vertices[33] = m.vertices[11] - vec3(-0.05, 0, 0);
+ 
+    m.vertices[34] = m.vertices[12] - vec3(-0.05, 0, 0);
+    m.vertices[35] = m.vertices[13] - vec3(-0.05, 0, 0);
+ 
+    m.vertices[36] = vec3(-1, 1, -0.1);
+    m.vertices[37] = vec3(-1, 0.3, -0.1);
+ 
+    m.vertices[38] = vec3(-1, 1, -1);
+    m.vertices[39] = vec3(-1, 0.1, -0.1);
+ 
+    m.vertices[40] = vec3(-1, 0.1, -1);
+    m.vertices[41] = vec3(-0.1, 0.1, -1);
+    m.vertices[42] = vec3(-0.1, 1, -1);
+ 
+    m.vertices[43] = vec3(-0.1, 1, -0.1);
  
     m.verticesLength = 14;
    
-    int tri[60] = int[60](
+    int tri[102] = int[102](
         // Top
         2,1,0,
         2,3,1,
@@ -379,12 +412,30 @@ void defineCube(inout Mesh m) {
         19,18,16,
 
         14,21,20,
-        14,20,16
+        14,20,16,
+
+        22,0,1,
+        22,1,23,
+        23,1,3,
+        23,3,25,
+
+        25,3,27,
+        3,5,27,
+
+        7,29,5,
+        5,29,27,
+        7,8,29,
+        29,8,30,
+
+        30,8,32,
+        8,10,32,
+        10, 12, 34,
+        10, 34, 32
     );
 
-    for (int i = 0; i < 60; ++i) m.triangles[i] = tri[i];
+    for (int i = 0; i < 102; ++i) m.triangles[i] = tri[i];
 
-    m.trianglesLength = 60;
+    m.trianglesLength = 102;
 }
 
 void main() {
@@ -441,7 +492,7 @@ void main() {
     cube.transform.pos = vec3(.0);
     scaleUniform(cube.transform, 0.8);
 
-    rotateY(cube.transform, normalizedMouse.x);
+    //rotateY(cube.transform, normalizedMouse.x);
     //rotateZ(cube.transform, normalizedMouse.y);
 
     AddEntity(world, cube);
