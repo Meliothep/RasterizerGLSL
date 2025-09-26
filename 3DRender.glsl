@@ -373,11 +373,11 @@ void defineCube(inout Mesh m) {
     m.vertices[34] = m.vertices[12] - vec3(-0.05, 0, 0);
     m.vertices[35] = m.vertices[13] - vec3(-0.05, 0, 0);
  
-    m.vertices[36] = vec3(-1, 1, -0.1);
-    m.vertices[37] = vec3(-1, 0.3, -0.1);
+    m.vertices[36] = m.vertices[14] - vec3(-0.05, 0, 0);
+    m.vertices[37] = m.vertices[15] - vec3(-0.05, 0, 0);
  
-    m.vertices[38] = vec3(-1, 1, -1);
-    m.vertices[39] = vec3(-1, 0.1, -0.1);
+    m.vertices[38] = m.vertices[16] - vec3(-0.05, 0, 0);
+    m.vertices[39] = m.vertices[17] - vec3(-0.05, 0, 0);
  
     m.vertices[40] = vec3(-1, 0.1, -1);
     m.vertices[41] = vec3(-0.1, 0.1, -1);
@@ -387,7 +387,7 @@ void defineCube(inout Mesh m) {
  
     m.verticesLength = 14;
    
-    int tri[102] = int[102](
+    int tri[108] = int[108](
         // Top
         2,1,0,
         2,3,1,
@@ -430,12 +430,15 @@ void defineCube(inout Mesh m) {
         30,8,32,
         8,10,32,
         10, 12, 34,
-        10, 34, 32
+        10, 34, 32,
+
+        14, 13, 36,
+        36, 13, 35
     );
 
-    for (int i = 0; i < 102; ++i) m.triangles[i] = tri[i];
+    for (int i = 0; i < 108; ++i) m.triangles[i] = tri[i];
 
-    m.trianglesLength = 102;
+    m.trianglesLength = 108;
 }
 
 void main() {
@@ -492,8 +495,8 @@ void main() {
     cube.transform.pos = vec3(.0);
     scaleUniform(cube.transform, 0.8);
 
-    //rotateY(cube.transform, normalizedMouse.x);
-    //rotateZ(cube.transform, normalizedMouse.y);
+    rotateY(cube.transform, sin(u_time)/4.);
+    rotateX(cube.transform, cos(u_time)/4.);
 
     AddEntity(world, cube);
 
