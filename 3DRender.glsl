@@ -1,11 +1,11 @@
 #version 300 es
 
-precision mediump float;
+precision lowp float;
 
 #define PI 3.14159265359
 #define MAX_VERTICES_NUMBER 40
 #define MAX_TRIANGLES_NUMBER 80 
-#define MAX_ENTITY_NUMBER 5 
+#define MAX_ENTITY_NUMBER 2 
 #define MAX_LIGHT_NUMBER 5 
 
 uniform vec2 u_resolution;
@@ -248,9 +248,13 @@ vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V){
         float distance = length(lightPosView - fragmentPosition);
         float attenuation = 1.0 / (distance * distance);
 
-        // Combine lighting
         vec3 baseLighting = diffuseIntensity * world.lights[i].intensity * attenuation * world.lights[i].color;
-        vec3 finalColor = baseLighting * mat.color.rgb + (attenuation * mat.reflection * world.lights[i].color);
+
+        vec3 litColor = baseLighting * mat.color.rgb;
+
+        vec3 contrasted = mix(litColor, litColor * litColor * 2.0, mat.reflection);
+
+        vec3 finalColor = contrasted + (attenuation * (1./distance) * world.lights[i].color);
 
         fragColor += vec4(finalColor, 1.0 - mat.transparency);
     } 
@@ -313,128 +317,134 @@ void renderWorld(vec2 st, World w){
 }
 
 /* ====================== MAIN ====================== */
-
 void defineCube(inout Mesh m) {
-
+ 
     // vertices
-    m.vertices[0] = vec3(-0.5, 0.5, -0.5); // topFL
-    m.vertices[1] = vec3(0.5, 0.5, -0.5); // topFR
-    m.vertices[2] = vec3(0.5, 0.5, 0.5); // topBR
-    m.vertices[3] = vec3(-0.5, 0.5, 0.5); // topBL
-
-    m.vertices[4] = vec3(-0.5, -0.5, -0.5); // BotFL
-    m.vertices[5] = vec3(0.5, -0.5, -0.5); // BotFR
-    m.vertices[6] = vec3(0.5, -0.5, 0.5); // BotBR
-    m.vertices[7] = vec3(-0.5, -0.5, 0.5); // BotBL
-    m.verticesLength = 8;
-    
-    int tri[36] = int[36](
+    //m.vertices[0] = vec3(1, 1, 1); // topBL
+    m.vertices[0] = vec3(-0.7, 1, 1); // topBR
+    m.vertices[1] = vec3(-0.7, 1, 0.3);
+    m.vertices[2] = vec3(1, 1, 1); // topBL
+    m.vertices[3] = vec3(0.3, 1, 0.3);
+ 
+    m.vertices[4] = vec3(1, 1, -1); // topFL
+    m.vertices[5] = vec3(0.3, 1, -1);
+    m.vertices[6] = vec3(1, -1, -1); // botFL
+    m.vertices[7] = vec3(0.3, -0.3, -1);
+ 
+    m.vertices[8] = vec3(-1, -0.3, -1);
+    m.vertices[9] = vec3(-1, -1, -1);
+ 
+    m.vertices[10] = vec3(-1, -0.3, 0.3);
+    m.vertices[11] = vec3(-1, -1, 1);
+ 
+    m.vertices[12] = vec3(-1, 0.3, 0.3);
+    m.vertices[13] = vec3(-1, 1, 1);
+ 
+    m.vertices[14] = vec3(-1, 1, -0.1);
+    m.vertices[15] = vec3(-1, 0.3, -0.1);
+ 
+    m.vertices[16] = vec3(-1, 1, -1);
+    m.vertices[17] = vec3(-1, 0.1, -0.1);
+ 
+    m.vertices[18] = vec3(-1, 0.1, -1);
+    m.vertices[19] = vec3(-0.1, 0.1, -1);
+    m.vertices[20] = vec3(-0.1, 1, -1);
+ 
+    m.vertices[21] = vec3(-0.1, 1, -0.1);
+ 
+    m.verticesLength = 14;
+   
+    int tri[60] = int[60](
         // Top
         2,1,0,
-        3,2,0,
-        // Bottom
-        4,5,6,
-        4,6,7,
+        2,3,1,
+        2,4,3,
+        4,5,3,
         // Front
-        0,1,4,
-        1,5,4,
-        // Back
-        7,6,2,
-        7,2,3,
+        4,6,5,
+        5,6,7,
+        9,7,6,
+        9,8,7,
         // Right
-        1,2,5,
-        5,2,6,
-        // Left
-        7,3,0,
-        0,4,7
+        9,11,10,
+        8,9,10,
+        11,13,12,
+        10,11,12,
+
+        13,14,15,
+        12,13,15,
+        14,16,17,
+        18,17,16,
+        20,19,16,
+        19,18,16,
+
+        14,21,20,
+        14,20,16
     );
 
-    for (int i = 0; i < 36; ++i) m.triangles[i] = tri[i];
+    for (int i = 0; i < 60; ++i) m.triangles[i] = tri[i];
 
-    m.trianglesLength = 36;
-}
-
-void defineGr(inout Mesh m) {
-    // Vertices
-    m.vertices[0] = vec3(-1, 0, 1); // FL
-    m.vertices[1] = vec3(1, 0, 1); // FR
-    m.vertices[2] = vec3(1, 0, -1); // BR
-    m.vertices[3] = vec3(-1,0 , -1); // BL
-
-    m.verticesLength = 4;
-    
-    // Triangles index 
-    int tri[6] = int[6](
-        0,1,2,
-        0,2,3
-    );
-
-    for (int i = 0; i < 6; ++i) m.triangles[i] = tri[i];
-
-    m.trianglesLength = 6;
+    m.trianglesLength = 60;
 }
 
 void main() {
 
     vec2 st = gl_FragCoord.xy/u_resolution.xy;
-    vec2 normalizedMouse = normalize(u_mouse);
+    vec2 normalizedMouse = normalize(u_mouse - (u_resolution.xy/2.));
 
     pixel.color = vec4(0.);
     pixel.depth = 1e9;
 
     // Define cam
-    world.camera = Camera(vec3(0.,2., -3.),
+    world.camera = Camera(vec3(0, 0., -4),
                 vec3(0.0, 0.0, 0.0),
                 vec3(0.0, 1.0, 0.0),
                 mat4(0.), mat4(0.));     
     
     world.camera.viewMatrix = getViewMatrix(world.camera.position, world.camera.target, world.camera.up);
-    world.camera.projectionMatrix = getPerspectiveMatrix(0.5*PI, u_resolution.x / u_resolution.y, 0.1, 100.0);
+    world.camera.projectionMatrix = getPerspectiveMatrix(0.4*PI, u_resolution.x / u_resolution.y, 0.1, 100.0);
 
-    world.skyboxColor = vec4(0.1, 0.4, 0.5, 1.0);
+    world.skyboxColor = vec4(0.0, 0.0, 0.0, 1.0);
 
     // Define light source
+
     Light light;
-    light.position = vec3(-2, 0., -0.);
+    light.position = vec3(0.6, 0.9, -3.);
     light.color = vec3(1.0, 1.0, 1.0);
     light.intensity = 7.;
-
     AddLight(world, light);
 
     Light lightB;
-    lightB.position = vec3(2, 0., -0.);
+    lightB.position = vec3(0.6, -3., -1.);
     lightB.color = vec3(1.0, 1.0, 1.0);
     lightB.intensity = 7.;
-
     AddLight(world, lightB);
+
+    Light lightC;
+    lightC.position = vec3(-3., -1.5, -0.5);
+    lightC.color = vec3(1.0, 1.0, 1.0);
+    lightC.intensity = 7.;
+    AddLight(world, lightC);
 
     // Define Cube
     Entity cube; 
     defineCube(cube.mesh); // Init geometry 
 
-    cube.m.color = vec4(0.4, 0.0, 0.6, 1.);
-    cube.m.reflection = 0.1;
+    cube.m.color = vec4(0.3, 0.23, 0.67, 1.0);
+    cube.m.reflection = 0.9;
     cube.m.transparency = 0.;
 
     cube.transform = default_transform;
-    rotateY(cube.transform, 0.5 * u_time);
-    rotateZ(cube.transform, 0.5);
+    rotateY(cube.transform, -0.8);
+    rotateX(cube.transform, -0.7);
+    //rotateZ(cube.transform, 0.5);
     cube.transform.pos = vec3(.0);
-    //scaleUniform(cube.transform, 0.8);
-    
+    scaleUniform(cube.transform, 0.8);
+
+    rotateY(cube.transform, normalizedMouse.x);
+    //rotateZ(cube.transform, normalizedMouse.y);
+
     AddEntity(world, cube);
-
-    // Define Ground
-    Entity gr; 
-    defineGr(gr.mesh); // Init geometry 
-    gr.m.color = vec4(0.8, 0.8, 0.8, 1); 
-    gr.m.reflection = 0.8;
-    gr.transform = default_transform;
-    gr.transform.pos = vec3(0., 0., 0.);
-    rotateY(gr.transform, 0.5 * - u_time);
-    //scale(gr.transform, vec3(2, 1., 2));
-    AddEntity(world, gr);
-
 
     // Render
     renderWorld(st, world);
