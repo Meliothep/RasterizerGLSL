@@ -8,7 +8,7 @@ Il gere le rendu des triangles 3D avec projection perspective, éclairage et bac
 
 C’est une mini pipeline graphique GPU reproduit manuellement dans un fragment shader. 
 
-## Comment testé 
+## Comment tester
 
 Le moyen le plus simple est d'installé l'extention vscode "Glsl canvas", ouvrir le shader, ctrl+Shift+P => Show GLSLCanvas
 
