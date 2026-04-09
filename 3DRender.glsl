@@ -192,99 +192,93 @@ void AddLight(inout World w, Light l){
     w.lightsLen ++;
 }
 
-/* ====================== PIPELINES ====================== */
+/* ====================== PIPELINES & RENDER ====================== */
 
-// Triangle Culling (Backface culling)
-bool isTriangleVisible(Triangle t, Camera cam) {
-    vec3 triCenter = (t.aV + t.bV + t.cV) / 3.0;
-    // en VSpace la cam est tjr a (0,0,0)
-    vec3 camToTri = normalize(triCenter - vec3(0.0));
-    // Check si la normal va vers la cam 
-    return dot(normalize(t.normalV), camToTri) < 0.0;
-}
+void GeometryPipeline(inout Triangle t, vec2 st, mat4 VM, mat4 MVP, mat3 normalMat) {
+    // 1. Object to world 
+    t.aC = MVP * vec4(t.a, 1.0);
+    t.bC = MVP * vec4(t.b, 1.0);
+    t.cC = MVP * vec4(t.c, 1.0);
 
-void GeometryPipeline(inout Triangle t, vec2 st, mat4 M , mat4 V, mat4 P){
-    
-    // Object => World 
-    t.aW = M * vec4(t.a, 1.0);
-    t.bW = M * vec4(t.b, 1.0);
-    t.cW = M * vec4(t.c, 1.0);
-
-    // Multiply by ViewMatrix
-    vec4 aV4 = V * t.aW; vec4 bV4 = V * t.bW; vec4 cV4 = V * t.cW;
-    t.aV = aV4.xyz / aV4.w; t.bV = bV4.xyz / bV4.w; t.cV = cV4.xyz / cV4.w;
-    
-    // Normal in view space
-    mat3 normalMat = mat3(transpose(inverse(V * M)));
-    t.normalV = normalize(normalMat * getTriangleNormal(t.a, t.b, t.c));
-    
-    // NDC -> [0,1] screen for barycentrics
-    t.aC = P * aV4; t.bC = P * bV4; t.cC = P * cV4;
+    // 2. Convert to [0, 1]
     vec2 aN = t.aC.xy / t.aC.w * 0.5 + 0.5;
     vec2 bN = t.bC.xy / t.bC.w * 0.5 + 0.5;
     vec2 cN = t.cC.xy / t.cC.w * 0.5 + 0.5;
 
-    t.ndc = barycentricCoords(st, aN, bN, cN);
+    // If the pixel is outside the triangle's rectangle, kill it immediately.
+    vec2 minAABB = min(aN, min(bN, cN));
+    vec2 maxAABB = max(aN, max(bN, cN));
+    
+    if (st.x < minAABB.x || st.x > maxAABB.x || 
+        st.y < minAABB.y || st.y > maxAABB.y) {
+        t.visibility = 0.0;
+        return; 
+    }
 
-    t.visibility = isTriangleVisible(t, world.camera) ? step(0.0, min(t.ndc.x, min(t.ndc.y, t.ndc.z))) : 0.0;
+    // 3. Transform to View Space
+    vec4 aV4 = VM * vec4(t.a, 1.0);
+    vec4 bV4 = VM * vec4(t.b, 1.0);
+    vec4 cV4 = VM * vec4(t.c, 1.0);
+
+    t.aV = aV4.xyz / aV4.w;
+    t.bV = bV4.xyz / bV4.w;
+    t.cV = cV4.xyz / cV4.w;
+
+    // 4. Calculate Normal
+    t.normalV = normalize(normalMat * getTriangleNormal(t.a, t.b, t.c));
+
+    // Backface Culling
+    vec3 triCenter = (t.aV + t.bV + t.cV) / 3.0;
+    vec3 camToTri = normalize(triCenter);
+    // is triangle facing away from the camera 
+    if (dot(t.normalV, camToTri) >= 0.0) { 
+        t.visibility = 0.0;
+        return; 
+    }
+
+    // 5. Barycentrics
+    t.ndc = barycentricCoords(st, aN, bN, cN);
+    t.visibility = step(0.0, min(t.ndc.x, min(t.ndc.y, t.ndc.z)));
 }
 
-vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V){
-    vec3 fragmentPosition = t.ndc.x * t.bV + t.ndc.y * t.cV + t.ndc.z * t.aV;
-    
+vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V, vec3 fragmentPosition){
     vec4 fragColor = vec4(0.);
 
     for(int i = 0; i < MAX_LIGHT_NUMBER; i++){
         if(i >= world.lightsLen) { break; }
 
         vec3 lightPosView = (V * vec4(world.lights[i].position, 1.0)).xyz;
-
         vec3 lightDir = normalize(lightPosView - fragmentPosition);
 
-        // light  Culling 
+        // light culling
         float diffuseIntensity = max(dot(normalize(t.normalV), lightDir), 0.0);
-
+        
         // Attenuation 
         float distance = length(lightPosView - fragmentPosition);
         float attenuation = 1.0 / (distance * distance);
 
         vec3 baseLighting = diffuseIntensity * world.lights[i].intensity * attenuation * world.lights[i].color;
-
         vec3 litColor = baseLighting * mat.color.rgb;
 
         vec3 contrasted = mix(litColor, litColor * litColor * 2.0, mat.reflection);
-
-        vec3 finalColor = contrasted + (attenuation * (1./distance) * world.lights[i].color);
+        vec3 finalColor = contrasted + (attenuation * (1.0/distance) * world.lights[i].color);
 
         fragColor += vec4(finalColor, 1.0 - mat.transparency);
     } 
-    
     return fragColor;
 }
 
-/* ====================== RENDER ====================== */
-
-vec4 renderTriangle(vec2 st, inout Triangle tr, Material mat, mat4 modelMatrix){
-    
-    GeometryPipeline(tr, st,
-        modelMatrix,
-        world.camera.viewMatrix,
-        world.camera.projectionMatrix);
-    
-    if (tr.visibility > 0.){
-        return ColorPipeline(tr, mat, world.camera.viewMatrix);
-    }
-    return vec4(0.); 
-}
-
 void renderEntity(vec2 st, Entity e) {
-    if(e.mesh.trianglesLength <= 0) {
-        pixel.color = vec4(0.);
-        return ;
-    }
+    if(e.mesh.trianglesLength <= 0) return;
 
-    vec4 color = vec4(0.);
-    mat4 modelMatrix = modelMatrix(e.transform);
+    // Precompute Matrices
+    mat4 M = modelMatrix(e.transform);
+    mat4 V = world.camera.viewMatrix;
+    mat4 P = world.camera.projectionMatrix;
+    
+    mat4 VM = V * M;          // View * Model
+    mat4 MVP = P * VM;        // Projection * View * Model
+    mat3 normalMat = mat3(transpose(inverse(VM))); // Normal Matrix
 
     for(int i = 0; i < MAX_TRIANGLES_NUMBER; i+=3){
         if(i >= e.mesh.trianglesLength) { break; }
@@ -294,15 +288,16 @@ void renderEntity(vec2 st, Entity e) {
         t.b = e.mesh.vertices[e.mesh.triangles[i+1]];
         t.c = e.mesh.vertices[e.mesh.triangles[i+2]];
 
-        color = renderTriangle(st, t, e.m, modelMatrix);
-        
-        // THE FUCKING Z BUFFER !!!!
-        if(color.a > 0.){
+        GeometryPipeline(t, st, VM, MVP, normalMat);
+
+        if(t.visibility > 0.0){
             vec3 fragmentPosition = t.ndc.x * t.bV + t.ndc.y * t.cV + t.ndc.z * t.aV;
-            float test = length(vec3(0.) - fragmentPosition); 
-            if (test < pixel.depth) { 
-                pixel.depth = test; 
-                pixel.color = color; 
+            
+            // THE FKING Z BUFFER
+            float currentDepth = length(fragmentPosition); // Distance from camera origin
+            if (currentDepth < pixel.depth) { 
+                pixel.depth = currentDepth;
+                pixel.color = ColorPipeline(t, e.m, V, fragmentPosition); 
             }
         }
     }
@@ -311,7 +306,6 @@ void renderEntity(vec2 st, Entity e) {
 void renderWorld(vec2 st, World w){
     for(int i = 0; i < MAX_ENTITY_NUMBER; i++){
         if(i >= w.entitiesLen) { break; }
-
         renderEntity(st, w.entities[i]);
     }
 }
@@ -319,17 +313,16 @@ void renderWorld(vec2 st, World w){
 /* ====================== MAIN ====================== */
 void defineCube(inout Mesh m) {
  
-    // vertices
-    //m.vertices[0] = vec3(1, 1, 1); // topBL
-    m.vertices[0] = vec3(-0.7, 1, 1); // topBR
+    // VERTICES 
+    m.vertices[0] = vec3(-0.7, 1, 1); 
     m.vertices[1] = vec3(-0.7, 1, 0.3);
-    m.vertices[2] = vec3(1, 1, 1); // topBL
+    m.vertices[2] = vec3(1, 1, 1); 
     m.vertices[3] = vec3(0.3, 1, 0.3);
  
-    m.vertices[4] = vec3(1, 1, -1); // topFL
+    m.vertices[4] = vec3(1, 1, -1); 
     m.vertices[5] = vec3(0.3, 1, -1);
 
-    m.vertices[6] = vec3(1, -1, -1); // botFL
+    m.vertices[6] = vec3(1, -1, -1); 
     m.vertices[7] = vec3(0.3, -0.3, -1);
  
     m.vertices[8] = vec3(-1, -0.3, -1);
@@ -353,15 +346,15 @@ void defineCube(inout Mesh m) {
  
     m.vertices[21] = vec3(-0.1, 1, -0.1);
 
-    m.vertices[22] = m.vertices[0] - vec3(0., 0.05, 0.); // topBR
+    m.vertices[22] = m.vertices[0] - vec3(0., 0.05, 0.); 
     m.vertices[23] = m.vertices[1] - vec3(0., 0.05, 0.);
-    m.vertices[24] = m.vertices[2] - vec3(0., 0.05, 0.); // topBL
+    m.vertices[24] = m.vertices[2] - vec3(0., 0.05, 0.); 
     m.vertices[25] = m.vertices[3] - vec3(0., 0.05, 0.);
  
-    m.vertices[26] = m.vertices[4] - vec3(0., 0.05, -0.05); // topBR
+    m.vertices[26] = m.vertices[4] - vec3(0., 0.05, -0.05); 
     m.vertices[27] = m.vertices[5] - vec3(0., 0.05, -0.05);
 
-    m.vertices[28] = m.vertices[6] - vec3(0., 0, -0.05); // topBL
+    m.vertices[28] = m.vertices[6] - vec3(0., 0, -0.05); 
     m.vertices[29] = m.vertices[7] - vec3(0., 0, -0.05);
  
     m.vertices[30] = m.vertices[8] - vec3(-0.05,0. , -0.05);
@@ -387,6 +380,8 @@ void defineCube(inout Mesh m) {
  
     m.verticesLength = 14;
    
+    // INDEXES
+
     int tri[108] = int[108](
         // Top
         2,1,0,
