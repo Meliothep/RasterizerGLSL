@@ -3,8 +3,8 @@
 precision lowp float;
 
 #define PI 3.14159265359
-#define MAX_VERTICES_NUMBER 45
-#define MAX_TRIANGLES_NUMBER 120 
+#define MAX_VERTICES_NUMBER 208
+#define MAX_TRIANGLES_NUMBER 348 
 #define MAX_ENTITY_NUMBER 2 
 #define MAX_LIGHT_NUMBER 3 
 
@@ -13,6 +13,7 @@ uniform vec2 u_mouse;
 uniform float u_time;
 
 uniform sampler2D u_texture_0;
+uniform sampler2D u_texture_1;
 
 // Fragment shader output
 out vec4 fragColor;
@@ -114,6 +115,7 @@ struct Transform{
 };
 
 struct Entity {
+    int meshId;
     int trianglesLength;
     Material m;
     Transform transform;
@@ -270,6 +272,29 @@ vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V, vec3 fragmentPosition
     return fragColor;
 }
 
+vec3 fetchVertex(int meshId, int vertexIndex) {
+    vec2 texSize;
+    vec4 rawData;
+    
+    if (meshId == 0) {
+        rawData = texelFetch(u_texture_0, ivec2(vertexIndex, 1), 0);
+    } else {
+        rawData = texelFetch(u_texture_1, ivec2(vertexIndex, 1), 0);
+    }
+
+    return rawData.xyz * 4.0 - 2.0;
+}
+
+ivec3 fetchTriangle(int meshId, int triIndex) {
+    vec4 rawData;
+    if (meshId == 0) {
+        rawData = texelFetch(u_texture_0, ivec2(triIndex, 0), 0);
+    } else {
+        rawData = texelFetch(u_texture_1, ivec2(triIndex, 0), 0);
+    }
+    return ivec3(rawData.rgb * 255.0);
+}
+
 void renderEntity(vec2 st, Entity e) {
     if(e.trianglesLength <= 0) return;
 
@@ -282,25 +307,17 @@ void renderEntity(vec2 st, Entity e) {
     mat4 MVP = P * VM;        
     mat3 normalMat = mat3(transpose(inverse(VM))); 
 
-    for(int i = 0; i < MAX_TRIANGLES_NUMBER; i++){
-        if(i >= e.trianglesLength) { break; }
+    for(int i = 0; i < MAX_TRIANGLES_NUMBER / 3; i++){
+        if(i * 3 >= e.trianglesLength) break;
         
-        // --- READ FROM TEXTURE ---
+        // Fetch indices from Row 1 of the linked texture
+        ivec3 indices = fetchTriangle(e.meshId, i);
         
-        // Read 1 pixel from ROW 1 (Y=1). This gives us our 3 indices (R, G, B)
-        // texelFetch returns 0.0-1.0, so we multiply by 255 to get the exact integer index.
-        ivec3 idx = ivec3(round(texelFetch(u_texture_0, ivec2(i, 0), 0).rgb * 255.0));
-        
-        // Read 3 pixels from ROW 0 (Y=0) using those indices. 
-        // We unpack the color [0.0, 1.0] back to world space [-2.0, 2.0]
-        vec3 a = texelFetch(u_texture_0, ivec2(idx.x, 1), 0).rgb * 4.0 - 2.0;
-        vec3 b = texelFetch(u_texture_0, ivec2(idx.y, 1), 0).rgb * 4.0 - 2.0;
-        vec3 c = texelFetch(u_texture_0, ivec2(idx.z, 1), 0).rgb * 4.0 - 2.0;
-
         Triangle t;
-        t.a = a;
-        t.b = b;
-        t.c = c;
+        // Fetch vertex positions from Row 0 of the linked texture
+        t.a = fetchVertex(e.meshId, indices.x);
+        t.b = fetchVertex(e.meshId, indices.y);
+        t.c = fetchVertex(e.meshId, indices.z);
 
         GeometryPipeline(t, st, VM, MVP, normalMat);
 
@@ -367,7 +384,8 @@ void main() {
 
     // Define Cube Entity
     Entity cube; 
-    cube.trianglesLength = 70;
+    cube.meshId = 1; 
+    cube.trianglesLength = 348;
     
     cube.m.color = vec4(0.3, 0.23, 0.67, 1.0);
     cube.m.reflection = .9;
@@ -378,32 +396,29 @@ void main() {
     rotateX(cube.transform, -0.7);
     cube.transform.pos = vec3(.0);
     scaleUniform(cube.transform, .8);
-    rotateY(cube.transform, sin(u_time)/2.);
-    rotateX(cube.transform, cos(u_time)/2.);
-    
-    cube.transform.pos.x += 0.5;
+    rotateY(cube.transform, u_time);
+    //rotateX(cube.transform, cos(u_time)/2.)
 
     AddEntity(world, cube);
 
-    // Define Cube2 Entity
-    Entity cube2; 
-    cube2.trianglesLength = 70;
+    // Define Cube Entity
+    Entity anvil; 
+    anvil.meshId = 0; 
+    anvil.trianglesLength = 348;
     
-    cube2.m.color = vec4(0.6, 0.2, 0.4, 1.0);
-    cube2.m.reflection = .9;
-    cube2.m.transparency = 0.;
-    cube2.transform = default_transform;
+    anvil.m.color = vec4(0.5922, 0.9059, 0.9647, 1.0);
+    anvil.m.reflection = 1.;
+    anvil.m.transparency = 0.;
+    anvil.transform = default_transform;
 
-    rotateY(cube2.transform, -0.8);
-    rotateX(cube2.transform, -0.7);
-    cube2.transform.pos = vec3(.0);
-    scaleUniform(cube2.transform, .8);
-    rotateY(cube2.transform, -sin(u_time)/2.);
-    rotateX(cube2.transform, -cos(u_time)/2.);
+    rotateY(anvil.transform, -0.);
+    rotateX(anvil.transform, -0.7);
+    anvil.transform.pos = vec3(.0);
+    scaleUniform(anvil.transform, .4);
+    rotateY(anvil.transform, u_time);
+    //rotateX(cube.transform, cos(u_time)/2.)
 
-    cube2.transform.pos.x += -0.5;
-
-    AddEntity(world, cube2);
+    AddEntity(world, anvil);
 
     // Render
     renderWorld(st, world);
