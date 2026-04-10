@@ -64,6 +64,32 @@ mat4 getPerspectiveMatrix(float fov, float aspect, float near, float far) {
     );
 }
 
+bool rayTriangleIntersect(vec3 rayOrigin, vec3 rayDir, vec3 v0, vec3 v1, vec3 v2, out float t) {
+    const float EPSILON = 0.000001;
+    vec3 edge1 = v1 - v0;
+    vec3 edge2 = v2 - v0;
+    vec3 h = cross(rayDir, edge2);
+    float a = dot(edge1, h);
+    
+    // If 'a' is close to 0, the ray is parallel to the triangle (miss)
+    if (a > -EPSILON && a < EPSILON) return false; 
+    
+    float f = 1.0 / a;
+    vec3 s = rayOrigin - v0;
+    float u = f * dot(s, h);
+    if (u < 0.0 || u > 1.0) return false;
+    
+    vec3 q = cross(s, edge1);
+    float v = f * dot(rayDir, q);
+    if (v < 0.0 || u + v > 1.0) return false;
+    
+    // Calculate t (the distance from the origin to the intersection)
+    t = f * dot(edge2, q);
+    
+    // If t is positive, the hit is in front of the ray's origin
+    return t > EPSILON; 
+}
+
 /* ====================== STRUCTS ====================== */
 
 struct Pixel{
@@ -98,14 +124,6 @@ struct Material{
     vec4 color;
     float reflection;
     float transparency;
-};
-
-struct Mesh {
-
-    vec3 vertices[MAX_VERTICES_NUMBER];
-    int verticesLength;
-    int triangles[MAX_TRIANGLES_NUMBER];
-    int trianglesLength;
 };
 
 struct Transform{
@@ -198,82 +216,8 @@ void AddLight(inout World w, Light l){
 
 /* ====================== PIPELINES & RENDER ====================== */
 
-void GeometryPipeline(inout Triangle t, vec2 st, mat4 VM, mat4 MVP, mat3 normalMat) {
-    // 1. Object to world 
-    t.aC = MVP * vec4(t.a, 1.0);
-    t.bC = MVP * vec4(t.b, 1.0);
-    t.cC = MVP * vec4(t.c, 1.0);
-
-    // 2. Convert to [0, 1]
-    vec2 aN = t.aC.xy / t.aC.w * 0.5 + 0.5;
-    vec2 bN = t.bC.xy / t.bC.w * 0.5 + 0.5;
-    vec2 cN = t.cC.xy / t.cC.w * 0.5 + 0.5;
-
-    // If the pixel is outside the triangle's rectangle, kill it immediately.
-    vec2 minAABB = min(aN, min(bN, cN));
-    vec2 maxAABB = max(aN, max(bN, cN));
-    
-    if (st.x < minAABB.x || st.x > maxAABB.x || 
-        st.y < minAABB.y || st.y > maxAABB.y) {
-        t.visibility = 0.0;
-        return; 
-    }
-
-    // 3. Transform to View Space
-    vec4 aV4 = VM * vec4(t.a, 1.0);
-    vec4 bV4 = VM * vec4(t.b, 1.0);
-    vec4 cV4 = VM * vec4(t.c, 1.0);
-
-    t.aV = aV4.xyz / aV4.w;
-    t.bV = bV4.xyz / bV4.w;
-    t.cV = cV4.xyz / cV4.w;
-
-    // 4. Calculate Normal
-    t.normalV = normalize(normalMat * getTriangleNormal(t.a, t.b, t.c));
-
-    // Backface Culling
-    vec3 triCenter = (t.aV + t.bV + t.cV) / 3.0;
-    vec3 camToTri = normalize(triCenter);
-    // is triangle facing away from the camera 
-    if (dot(t.normalV, camToTri) >= 0.0) { 
-        t.visibility = 0.0;
-        return; 
-    }
-
-    // 5. Barycentrics
-    t.ndc = barycentricCoords(st, aN, bN, cN);
-    t.visibility = step(0.0, min(t.ndc.x, min(t.ndc.y, t.ndc.z)));
-}
-
-vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V, vec3 fragmentPosition){
-    vec4 fragColor = vec4(0.);
-
-    for(int i = 0; i < MAX_LIGHT_NUMBER; i++){
-        if(i >= world.lightsLen) { break; }
-
-        vec3 lightPosView = (V * vec4(world.lights[i].position, 1.0)).xyz;
-        vec3 lightDir = normalize(lightPosView - fragmentPosition);
-
-        // light culling
-        float diffuseIntensity = max(dot(normalize(t.normalV), lightDir), 0.0);
-        
-        // Attenuation 
-        float distance = length(lightPosView - fragmentPosition);
-        float attenuation = 1.0 / (distance * distance);
-
-        vec3 baseLighting = diffuseIntensity * world.lights[i].intensity * attenuation * world.lights[i].color;
-        vec3 litColor = baseLighting * mat.color.rgb;
-
-        vec3 contrasted = mix(litColor, litColor * litColor * 2.0, mat.reflection);
-        vec3 finalColor = contrasted + (attenuation * (1.0/distance) * world.lights[i].color);
-
-        fragColor += vec4(finalColor, 1.0 - mat.transparency);
-    } 
-    return fragColor;
-}
 
 vec3 fetchVertex(int meshId, int vertexIndex) {
-    vec2 texSize;
     vec4 rawData;
     
     if (meshId == 0) {
@@ -295,6 +239,123 @@ ivec3 fetchTriangle(int meshId, int triIndex) {
     return ivec3(rawData.rgb * 255.0);
 }
 
+void GeometryPipeline(inout Triangle t, vec2 st, mat4 VM, mat4 MVP, mat3 normalMat) {
+    // Object to world 
+    t.aC = MVP * vec4(t.a, 1.0);
+    t.bC = MVP * vec4(t.b, 1.0);
+    t.cC = MVP * vec4(t.c, 1.0);
+
+    // Convert to [0, 1]
+    vec2 aN = t.aC.xy / t.aC.w * 0.5 + 0.5;
+    vec2 bN = t.bC.xy / t.bC.w * 0.5 + 0.5;
+    vec2 cN = t.cC.xy / t.cC.w * 0.5 + 0.5;
+
+    // If the pixel is outside the triangle's rectangle, kill it immediately.
+    vec2 minAABB = min(aN, min(bN, cN));
+    vec2 maxAABB = max(aN, max(bN, cN));
+    
+    if (st.x < minAABB.x || st.x > maxAABB.x || 
+        st.y < minAABB.y || st.y > maxAABB.y) {
+        t.visibility = 0.0;
+        return; 
+    }
+
+    // Transform to View Space
+    vec4 aV4 = VM * vec4(t.a, 1.0);
+    vec4 bV4 = VM * vec4(t.b, 1.0);
+    vec4 cV4 = VM * vec4(t.c, 1.0);
+
+    t.aV = aV4.xyz / aV4.w;
+    t.bV = bV4.xyz / bV4.w;
+    t.cV = cV4.xyz / cV4.w;
+
+    // Calculate Normal
+    t.normalV = normalize(normalMat * getTriangleNormal(t.a, t.b, t.c));
+
+    // Backface Culling
+    vec3 triCenter = (t.aV + t.bV + t.cV) / 3.0;
+    vec3 camToTri = normalize(triCenter);
+    // is triangle facing away from the camera 
+    if (dot(t.normalV, camToTri) >= 0.0) { 
+        t.visibility = 0.0;
+        return; 
+    }
+    // Precompute barycentric
+    t.ndc = barycentricCoords(st, aN, bN, cN);
+    t.visibility = step(0.0, min(t.ndc.x, min(t.ndc.y, t.ndc.z)));
+}
+
+float getShadowFactor(vec3 fragPos, vec3 lightPos) {
+    vec3 rayDir = normalize(lightPos - fragPos);
+    float distanceToLight = length(lightPos - fragPos);
+    vec3 rayOrigin = fragPos + rayDir * 0.01; 
+
+    for(int eIdx = 0; eIdx < MAX_ENTITY_NUMBER; eIdx++) {
+        if(eIdx >= world.entitiesLen) break;
+        
+        Entity e = world.entities[eIdx];
+        if(e.trianglesLength <= 0) continue;
+
+        mat4 M = modelMatrix(e.transform);
+        mat4 VM = world.camera.viewMatrix * M;
+
+        for(int i = 0; i < MAX_TRIANGLES_NUMBER / 3; i++) {
+            if(i * 3 >= e.trianglesLength) break;
+
+            ivec3 indices = fetchTriangle(e.meshId, i);
+            vec3 aLocal = fetchVertex(e.meshId, indices.x);
+            vec3 bLocal = fetchVertex(e.meshId, indices.y);
+            vec3 cLocal = fetchVertex(e.meshId, indices.z);
+            
+            vec3 aV = (VM * vec4(aLocal, 1.0)).xyz;
+            vec3 bV = (VM * vec4(bLocal, 1.0)).xyz;
+            vec3 cV = (VM * vec4(cLocal, 1.0)).xyz;
+
+            float hitDistance;
+            if(rayTriangleIntersect(rayOrigin, rayDir, aV, bV, cV, hitDistance)) {
+                if(hitDistance > 0.0 && hitDistance < distanceToLight) {
+                    return 0.1; 
+                }
+            }
+        }
+    }
+    return 1.0; 
+}
+
+vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V, vec3 fragmentPosition){
+    vec4 fragColor = vec4(0.);
+    
+    for(int i = 0; i < MAX_LIGHT_NUMBER; i++){
+        if(i >= world.lightsLen) { break; }
+
+        vec3 lightPosView = (V * vec4(world.lights[i].position, 1.0)).xyz;
+        vec3 lightDir = normalize(lightPosView - fragmentPosition);
+
+        // cast shadow ray
+        float shadowFactor = getShadowFactor(fragmentPosition, lightPosView);
+
+        // light culling
+        float diffuseIntensity = max(dot(normalize(t.normalV), lightDir), 0.0);
+        
+        // Attenuation 
+        float distance = length(lightPosView - fragmentPosition);
+        float attenuation = 1.0 / (distance * distance);
+
+        // apply shadow factor
+        vec3 baseLighting = shadowFactor * diffuseIntensity * world.lights[i].intensity * attenuation * world.lights[i].color;
+        
+        vec3 litColor = baseLighting * mat.color.rgb;
+        vec3 contrasted = mix(litColor, litColor * litColor * 2.0, mat.reflection);
+        
+        // Only apply the raw light color specularly if not in shadow
+        vec3 specularHit = (shadowFactor == 1.0) ? (attenuation * (1.0/distance) * world.lights[i].color) : vec3(0.0);
+        vec3 finalColor = contrasted + specularHit;
+
+        fragColor += vec4(finalColor, 1.0 - mat.transparency);
+    } 
+    return fragColor;
+}
+
 void renderEntity(vec2 st, Entity e) {
     if(e.trianglesLength <= 0) return;
 
@@ -310,11 +371,11 @@ void renderEntity(vec2 st, Entity e) {
     for(int i = 0; i < MAX_TRIANGLES_NUMBER / 3; i++){
         if(i >= e.trianglesLength) { break; }
         
-        // Fetch indices from Row 1 of the linked texture
+        // Fetch indices from the linked texture
         ivec3 indices = fetchTriangle(e.meshId, i);
         
         Triangle t;
-        // Fetch vertex positions from Row 0 of the linked texture
+        // Fetch vertex positions from the linked texture
         t.a = fetchVertex(e.meshId, indices.x);
         t.b = fetchVertex(e.meshId, indices.y);
         t.c = fetchVertex(e.meshId, indices.z);
@@ -363,7 +424,6 @@ void main() {
     world.skyboxColor = vec4(0.0, 0.0, 0.0, 1.0);
 
     // Define light source
-
     Light light;
     light.position = vec3(0.6, 0.9, -3.);
     light.color = vec3(1.0, 1.0, 1.0);
@@ -371,16 +431,16 @@ void main() {
     AddLight(world, light);
 
     Light lightB;
-    lightB.position = vec3(0.6, -3., -1.);
+    lightB.position = vec3(0.6, -3., -2.);
     lightB.color = vec3(1.0, 1.0, 1.0);
     lightB.intensity = 7.;
     AddLight(world, lightB);
 
-    Light lightC;
-    lightC.position = vec3(-3., -1.5, -0.5);
-    lightC.color = vec3(1.0, 1.0, 1.0);
-    lightC.intensity = 7.;
-    AddLight(world, lightC);
+    // Light lightC;
+    // lightC.position = vec3(-3., -1.5, -0.5);
+    // lightC.color = vec3(1.0, 1.0, 1.0);
+    // lightC.intensity = 7.;
+    // AddLight(world, lightC);
 
     // Define Cube Entity
     Entity cube; 
@@ -397,28 +457,28 @@ void main() {
     cube.transform.pos = vec3(.0);
     scaleUniform(cube.transform, .8);
     rotateY(cube.transform, u_time);
-    //rotateX(cube.transform, cos(u_time)/2.)
 
     AddEntity(world, cube);
 
-    Entity anvil; 
-    anvil.meshId = 0; 
-    anvil.trianglesLength = 40;
+    // Define sword Entity
+    Entity sword; 
+    sword.meshId = 0; 
+    sword.trianglesLength = 56;
     
-    anvil.m.color = vec4(0.5922, 0.9059, 0.9647, 1.0);
-    anvil.m.reflection = 1.;
-    anvil.m.transparency = 0.;
-    anvil.transform = default_transform;
+    sword.m.color = vec4(0.5922, 0.9059, 0.9647, 1.0);
+    sword.m.reflection = 1.;
+    sword.m.transparency = 0.;
+    sword.transform = default_transform;
 
-    rotateY(anvil.transform, -0.);
-    rotateX(anvil.transform, 0.7);
+    rotateY(sword.transform, -0.3);
+    rotateX(sword.transform, 0.);
     
-    anvil.transform.pos = vec3(.0);
-    scaleUniform(anvil.transform, .3);
-    rotateY(anvil.transform, u_time);
-    //rotateX(cube.transform, cos(u_time)/2.)
+    sword.transform.pos = vec3(.0);
+    
+    scaleUniform(sword.transform, .9);
+    rotateY(sword.transform, u_time);
 
-    AddEntity(world, anvil);
+    AddEntity(world, sword);
 
     // Render
     renderWorld(st, world);

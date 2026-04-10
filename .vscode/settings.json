@@ -1,6 +1,6 @@
 {
     "glsl-canvas.textures": {
-        "0": "./textures/diamond.png",
+        "0": "./textures/sword.png",
         "1": "./textures/gamecube.png",
 	}
 }
