@@ -114,7 +114,7 @@ struct Transform{
 };
 
 struct Entity {
-    int trianglesLength; // Pass the total triangle count (36 for your cube)
+    int trianglesLength;
     Material m;
     Transform transform;
 };
