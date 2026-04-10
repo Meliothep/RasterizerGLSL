@@ -28,4 +28,8 @@ Le moyen le plus simple est d'installé l'extention vscode "Glsl canvas", ouvrir
 
 - [x] Support d'eclairage multiple
 
-- [ ] Shading ? 
+- [x] Mesh from texture
+
+- [ ] Cast shadow 
+
+- [ ] Ray Tracing ?  

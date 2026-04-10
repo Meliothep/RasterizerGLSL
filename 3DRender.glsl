@@ -12,6 +12,8 @@ uniform vec2 u_resolution;
 uniform vec2 u_mouse;
 uniform float u_time;
 
+uniform sampler2D u_texture_0;
+
 // Fragment shader output
 out vec4 fragColor;
 
@@ -111,8 +113,8 @@ struct Transform{
     mat3 scale;
 };
 
-struct Entity{
-    Mesh mesh; 
+struct Entity {
+    int trianglesLength; // Pass the total triangle count (36 for your cube)
     Material m;
     Transform transform;
 };
@@ -268,33 +270,46 @@ vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V, vec3 fragmentPosition
     return fragColor;
 }
 
+// 2. Update the Renderer to fetch data from the texture
 void renderEntity(vec2 st, Entity e) {
-    if(e.mesh.trianglesLength <= 0) return;
+    if(e.trianglesLength <= 0) return;
 
     // Precompute Matrices
     mat4 M = modelMatrix(e.transform);
     mat4 V = world.camera.viewMatrix;
     mat4 P = world.camera.projectionMatrix;
     
-    mat4 VM = V * M;          // View * Model
-    mat4 MVP = P * VM;        // Projection * View * Model
-    mat3 normalMat = mat3(transpose(inverse(VM))); // Normal Matrix
+    mat4 VM = V * M;          
+    mat4 MVP = P * VM;        
+    mat3 normalMat = mat3(transpose(inverse(VM))); 
 
-    for(int i = 0; i < MAX_TRIANGLES_NUMBER; i+=3){
-        if(i >= e.mesh.trianglesLength) { break; }
+    for(int i = 0; i < MAX_TRIANGLES_NUMBER; i++){
+        if(i >= e.trianglesLength) { break; }
         
+        // --- READ FROM TEXTURE ---
+        
+        // Read 1 pixel from ROW 1 (Y=1). This gives us our 3 indices (R, G, B)
+        // texelFetch returns 0.0-1.0, so we multiply by 255 to get the exact integer index.
+        ivec3 idx = ivec3(round(texelFetch(u_texture_0, ivec2(i, 0), 0).rgb * 255.0));
+        
+        // Read 3 pixels from ROW 0 (Y=0) using those indices. 
+        // We unpack the color [0.0, 1.0] back to world space [-2.0, 2.0]
+        vec3 a = texelFetch(u_texture_0, ivec2(idx.x, 1), 0).rgb * 4.0 - 2.0;
+        vec3 b = texelFetch(u_texture_0, ivec2(idx.y, 1), 0).rgb * 4.0 - 2.0;
+        vec3 c = texelFetch(u_texture_0, ivec2(idx.z, 1), 0).rgb * 4.0 - 2.0;
+
         Triangle t;
-        t.a = e.mesh.vertices[e.mesh.triangles[i]];
-        t.b = e.mesh.vertices[e.mesh.triangles[i+1]];
-        t.c = e.mesh.vertices[e.mesh.triangles[i+2]];
+        t.a = a;
+        t.b = b;
+        t.c = c;
 
         GeometryPipeline(t, st, VM, MVP, normalMat);
 
         if(t.visibility > 0.0){
             vec3 fragmentPosition = t.ndc.x * t.bV + t.ndc.y * t.cV + t.ndc.z * t.aV;
             
-            // THE FKING Z BUFFER
-            float currentDepth = length(fragmentPosition); // Distance from camera origin
+            // THE FUCKING Z BUFFER !!!!
+            float currentDepth = length(fragmentPosition); 
             if (currentDepth < pixel.depth) { 
                 pixel.depth = currentDepth;
                 pixel.color = ColorPipeline(t, e.m, V, fragmentPosition); 
@@ -311,130 +326,6 @@ void renderWorld(vec2 st, World w){
 }
 
 /* ====================== MAIN ====================== */
-void defineCube(inout Mesh m) {
- 
-    // VERTICES 
-    m.vertices[0] = vec3(-0.7, 1, 1); 
-    m.vertices[1] = vec3(-0.7, 1, 0.3);
-    m.vertices[2] = vec3(1, 1, 1); 
-    m.vertices[3] = vec3(0.3, 1, 0.3);
- 
-    m.vertices[4] = vec3(1, 1, -1); 
-    m.vertices[5] = vec3(0.3, 1, -1);
-
-    m.vertices[6] = vec3(1, -1, -1); 
-    m.vertices[7] = vec3(0.3, -0.3, -1);
- 
-    m.vertices[8] = vec3(-1, -0.3, -1);
-    m.vertices[9] = vec3(-1, -1, -1);
- 
-    m.vertices[10] = vec3(-1, -0.3, 0.3);
-    m.vertices[11] = vec3(-1, -1, 1);
- 
-    m.vertices[12] = vec3(-1, 0.3, 0.3);
-    m.vertices[13] = vec3(-1, 1, 1);
- 
-    m.vertices[14] = vec3(-1, 1, -0.1);
-    m.vertices[15] = vec3(-1, 0.3, -0.1);
- 
-    m.vertices[16] = vec3(-1, 1, -1);
-    m.vertices[17] = vec3(-1, 0.1, -0.1);
- 
-    m.vertices[18] = vec3(-1, 0.1, -1);
-    m.vertices[19] = vec3(-0.1, 0.1, -1);
-    m.vertices[20] = vec3(-0.1, 1, -1);
- 
-    m.vertices[21] = vec3(-0.1, 1, -0.1);
-
-    m.vertices[22] = m.vertices[0] - vec3(0., 0.05, 0.); 
-    m.vertices[23] = m.vertices[1] - vec3(0., 0.05, 0.);
-    m.vertices[24] = m.vertices[2] - vec3(0., 0.05, 0.); 
-    m.vertices[25] = m.vertices[3] - vec3(0., 0.05, 0.);
- 
-    m.vertices[26] = m.vertices[4] - vec3(0., 0.05, -0.05); 
-    m.vertices[27] = m.vertices[5] - vec3(0., 0.05, -0.05);
-
-    m.vertices[28] = m.vertices[6] - vec3(0., 0, -0.05); 
-    m.vertices[29] = m.vertices[7] - vec3(0., 0, -0.05);
- 
-    m.vertices[30] = m.vertices[8] - vec3(-0.05,0. , -0.05);
-    m.vertices[31] = m.vertices[9] - vec3(-0.05, 0, -0.05);
- 
-    m.vertices[32] = m.vertices[10] - vec3(-0.05, 0, 0);
-    m.vertices[33] = m.vertices[11] - vec3(-0.05, 0, 0);
- 
-    m.vertices[34] = m.vertices[12] - vec3(-0.05, 0, 0);
-    m.vertices[35] = m.vertices[13] - vec3(-0.05, 0, 0);
- 
-    m.vertices[36] = m.vertices[14] - vec3(-0.05, 0, 0);
-    m.vertices[37] = m.vertices[15] - vec3(-0.05, 0, 0);
- 
-    m.vertices[38] = m.vertices[16] - vec3(-0.05, 0, 0);
-    m.vertices[39] = m.vertices[17] - vec3(-0.05, 0, 0);
- 
-    m.vertices[40] = vec3(-1, 0.1, -1);
-    m.vertices[41] = vec3(-0.1, 0.1, -1);
-    m.vertices[42] = vec3(-0.1, 1, -1);
- 
-    m.vertices[43] = vec3(-0.1, 1, -0.1);
- 
-    m.verticesLength = 14;
-   
-    // INDEXES
-
-    int tri[108] = int[108](
-        // Top
-        2,1,0,
-        2,3,1,
-        2,4,3,
-        4,5,3,
-        // Front
-        4,6,5,
-        5,6,7,
-        9,7,6,
-        9,8,7,
-        // Right
-        9,11,10,
-        8,9,10,
-        11,13,12,
-        10,11,12,
-
-        13,14,15,
-        12,13,15,
-        14,16,17,
-        18,17,16,
-        20,19,16,
-        19,18,16,
-
-        14,21,20,
-        14,20,16,
-
-        22,0,1,
-        22,1,23,
-        23,1,3,
-        23,3,25,
-
-        25,3,27,
-        3,5,27,
-
-        7,29,5,
-        5,29,27,
-        7,8,29,
-        29,8,30,
-
-        30,8,32,
-        8,10,32,
-        10, 12, 34,
-        10, 34, 32,
-
-        14, 13, 36,
-        36, 13, 35
-    );
-
-    for (int i = 0; i < 108; ++i) m.triangles[i] = tri[i];
-
-    m.trianglesLength = 108;
-}
 
 void main() {
 
@@ -475,30 +366,49 @@ void main() {
     lightC.intensity = 7.;
     AddLight(world, lightC);
 
-    // Define Cube
+    // Define Cube Entity
     Entity cube; 
-    defineCube(cube.mesh); // Init geometry 
-
+    cube.trianglesLength = 70;
+    
     cube.m.color = vec4(0.3, 0.23, 0.67, 1.0);
-    cube.m.reflection = 0.9;
+    cube.m.reflection = .9;
     cube.m.transparency = 0.;
-
     cube.transform = default_transform;
+
     rotateY(cube.transform, -0.8);
     rotateX(cube.transform, -0.7);
-    //rotateZ(cube.transform, 0.5);
     cube.transform.pos = vec3(.0);
-    scaleUniform(cube.transform, 0.8);
-
-    rotateY(cube.transform, sin(u_time)/4.);
-    rotateX(cube.transform, cos(u_time)/4.);
+    scaleUniform(cube.transform, .8);
+    rotateY(cube.transform, sin(u_time)/2.);
+    rotateX(cube.transform, cos(u_time)/2.);
+    
+    cube.transform.pos.x += 0.5;
 
     AddEntity(world, cube);
+
+    // Define Cube2 Entity
+    Entity cube2; 
+    cube2.trianglesLength = 70;
+    
+    cube2.m.color = vec4(0.6, 0.2, 0.4, 1.0);
+    cube2.m.reflection = .9;
+    cube2.m.transparency = 0.;
+    cube2.transform = default_transform;
+
+    rotateY(cube2.transform, -0.8);
+    rotateX(cube2.transform, -0.7);
+    cube2.transform.pos = vec3(.0);
+    scaleUniform(cube2.transform, .8);
+    rotateY(cube2.transform, -sin(u_time)/2.);
+    rotateX(cube2.transform, -cos(u_time)/2.);
+
+    cube2.transform.pos.x += -0.5;
+
+    AddEntity(world, cube2);
 
     // Render
     renderWorld(st, world);
     
     vec4 color = pixel.color;
-    // Result
     fragColor = color.a > 0.0 ? color : world.skyboxColor;
 }
