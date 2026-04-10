@@ -3,8 +3,8 @@
 precision lowp float;
 
 #define PI 3.14159265359
-#define MAX_VERTICES_NUMBER 208
-#define MAX_TRIANGLES_NUMBER 348 
+#define MAX_VERTICES_NUMBER 255
+#define MAX_TRIANGLES_NUMBER 255 
 #define MAX_ENTITY_NUMBER 2 
 #define MAX_LIGHT_NUMBER 3 
 
@@ -308,7 +308,7 @@ void renderEntity(vec2 st, Entity e) {
     mat3 normalMat = mat3(transpose(inverse(VM))); 
 
     for(int i = 0; i < MAX_TRIANGLES_NUMBER / 3; i++){
-        if(i * 3 >= e.trianglesLength) break;
+        if(i >= e.trianglesLength) { break; }
         
         // Fetch indices from Row 1 of the linked texture
         ivec3 indices = fetchTriangle(e.meshId, i);
@@ -385,7 +385,7 @@ void main() {
     // Define Cube Entity
     Entity cube; 
     cube.meshId = 1; 
-    cube.trianglesLength = 348;
+    cube.trianglesLength = 70;
     
     cube.m.color = vec4(0.3, 0.23, 0.67, 1.0);
     cube.m.reflection = .9;
@@ -401,10 +401,9 @@ void main() {
 
     AddEntity(world, cube);
 
-    // Define Cube Entity
     Entity anvil; 
     anvil.meshId = 0; 
-    anvil.trianglesLength = 348;
+    anvil.trianglesLength = 40;
     
     anvil.m.color = vec4(0.5922, 0.9059, 0.9647, 1.0);
     anvil.m.reflection = 1.;
@@ -412,9 +411,10 @@ void main() {
     anvil.transform = default_transform;
 
     rotateY(anvil.transform, -0.);
-    rotateX(anvil.transform, -0.7);
+    rotateX(anvil.transform, 0.7);
+    
     anvil.transform.pos = vec3(.0);
-    scaleUniform(anvil.transform, .4);
+    scaleUniform(anvil.transform, .3);
     rotateY(anvil.transform, u_time);
     //rotateX(cube.transform, cos(u_time)/2.)
 
