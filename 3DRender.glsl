@@ -270,7 +270,6 @@ vec4 ColorPipeline(inout Triangle t, Material mat, mat4 V, vec3 fragmentPosition
     return fragColor;
 }
 
-// 2. Update the Renderer to fetch data from the texture
 void renderEntity(vec2 st, Entity e) {
     if(e.trianglesLength <= 0) return;
 
